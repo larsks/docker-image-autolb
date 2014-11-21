@@ -1,0 +1,34 @@
+global
+    daemon
+    maxconn 4096
+    pidfile /var/run/haproxy.pid
+
+defaults
+    mode tcp
+    timeout connect 5s
+    timeout client 1m
+    timeout server 1m
+    option redispatch
+    balance roundrobin
+
+listen stats :1936
+    mode http
+    stats enable
+    stats hide-version
+    stats uri /
+
+{% for service in services.values() %}
+backend {{ service.name }}
+    balance roundrobin
+    mode tcp
+    {% for backend in service.backends -%}
+    server {{service.name}}_{{loop.index}} {{backend}} check
+    {% endfor -%}
+{% endfor -%}
+
+{% for service in services.values() %}
+frontend {{ service.name }}
+    bind {{service.addr}}:{{service.port}}
+    mode tcp
+    default_backend {{service.name}}
+{% endfor %}

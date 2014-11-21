@@ -1,0 +1,71 @@
+#!/usr/bin/python
+
+import argparse
+import os
+import sys
+from jinja2 import Environment, FileSystemLoader
+import re
+
+re_service_port = re.compile(
+    '^LB_(?P<name>.*)_LISTEN_PORT$')
+re_service_addr = re.compile(
+    '^LB_(?P<name>.*)_LISTEN_ADDR$')
+re_backend = re.compile(
+    '^LB_(?P<name>.*)_BACKEND_(?P<backend>\d+)$')
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument('--output', '-o',
+                   default='/etc/haproxy/haproxy.cfg')
+    p.add_argument('--template-dir', '-t',
+                   default='/etc/haproxy/templates')
+    return p.parse_args()
+
+
+def new_service(name):
+    return {
+        'name': name,
+        'addr': '127.0.0.1',
+        'backends': [],
+    }
+
+
+def discover_services():
+    services = {}
+
+    for k, v in os.environ.items():
+        mo = re_service_addr.match(k)
+        if mo:
+            if not mo.group('name') in services:
+                services[mo.group('name')] = new_service(mo.group('name'))
+            services[mo.group('name')]['addr'] = v
+
+        mo = re_service_port.match(k)
+        if mo:
+            if not mo.group('name') in services:
+                services[mo.group('name')] = new_service(mo.group('name'))
+            services[mo.group('name')]['port'] = v
+
+        mo = re_backend.match(k)
+        if mo:
+            if not mo.group('name') in services:
+                services[mo.group('name')] = new_service(mo.group('name'))
+            services[mo.group('name')]['backends'].append(v)
+
+    return services
+
+
+def main():
+    args = parse_args()
+    services = discover_services()
+
+    env = Environment(loader=FileSystemLoader(['.',
+                                               args.template_dir]))
+    template = env.get_template('haproxy.cfg.tmpl')
+    with open(args.output, 'w') as fd:
+        fd.write(template.render(services=services))
+
+if __name__ == '__main__':
+    main()
+
